@@ -12,6 +12,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -26,13 +27,14 @@ public class Main {
         final int messages = 100;
         final int threads = 2;
         final CountDownLatch latch = new CountDownLatch(threads * messages);
+        final AtomicInteger errors = new AtomicInteger(0);
         printProgress(latch);
         for (int i = 0; i < threads; ++i) {
             new Thread(() ->
             {
                 for (int msgNo = 0; msgNo < messages; ++msgNo) {
                     try {
-                        client.connect(new WsListener(latch), uri);//.get(5, TimeUnit.SECONDS);
+                        client.connect(new WsListener(latch, errors), uri);//.get(5, TimeUnit.SECONDS);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -43,6 +45,7 @@ public class Main {
         latch.await(3, TimeUnit.MINUTES);
         client.stop();
         server.stop();
+        System.out.println("errors: " + errors);
     }
 
     private static void printProgress(final CountDownLatch latch) {
@@ -101,10 +104,12 @@ public class Main {
 
     private static class WsListener implements WebSocketListener {
         private final CountDownLatch latch;
+        private final AtomicInteger errors;
         private Session session;
 
-        public WsListener(final CountDownLatch latch) {
+        WsListener(final CountDownLatch latch, final AtomicInteger errors) {
             this.latch = latch;
+            this.errors = errors;
         }
 
         @Override
@@ -124,6 +129,8 @@ public class Main {
 
         @Override
         public void onWebSocketError(final Throwable cause) {
+            errors.incrementAndGet();
+            latch.countDown();
             cause.printStackTrace();
         }
 
